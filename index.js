@@ -34,6 +34,7 @@ async function LoadConfig(){
 
     PROJECT_CONFIGS = config.Projects.map((input,i) => {
         var copy = {...input};
+
         if ("ProjectRegex" in copy){
             copy.Project = new RegExp(input.ProjectRegex);
             delete copy.ProjectRegex;
@@ -42,8 +43,8 @@ async function LoadConfig(){
             copy.Client = new RegExp(input.ClientRegex);
             delete copy.ClientRegex;
         }
-        if(!("Order" in copy) && !("Opportunity" in copy) && !(copy.Ignore === true)){
-            throw `Bad configuration, Rule {i} lacks both Order and Opportunity, and Ignore is not true`;
+        if(!copy.Ignore && !("Order" in copy) && !("Opportunity" in copy)){
+            throw `Bad configuration, Rule ${i} lacks either Order or Opportunity and is not set to be ignored`;
         }
         return copy;
     });
@@ -78,9 +79,18 @@ function getDetailsForProject(project,client){
     }
 }
 
-async function getAllPages(start,end){
-    let result = {data:[null]}
-    const allResults = [];
+/**
+ * Fetches all the time records from the toggl report api, yielding them one at a time
+ * @param {string} start The beginning of the date range (iso format)
+ * @param {string} end The end of the date range (iso format)
+ * @returns {AsyncGenerator<{start:string,end:string,project:string,client:string,description:string,tags:string[]},void,void>}
+ */
+async function* getAllPages(start,end){
+    let result = {data:[null]}; // we prepopulate this with fake data to pass the first go of the loop
+
+    const headers = {
+        Authorization:"Basic "+Buffer.from(API_KEY+":"+API_PASSWORD).toString("base64")
+    }
 
     for(let page=1; result.data.length != 0; page++){
         const query = ENDPOINT + "?" + qs.stringify({
@@ -90,35 +100,36 @@ async function getAllPages(start,end){
             until:end,
             page
         });
-        const headers = {
-            Authorization:"Basic "+Buffer.from(API_KEY+":"+API_PASSWORD).toString("base64")
-        }
         const fetchResult = await fetch(query,{headers});
         result = await fetchResult.json();
 
         if(result.error){
             throw result.error;
         }
-
-        allResults.push(...result.data);
+        yield* result.data;
     }
-    return allResults;
 }
 
-async function getFromToggle({since,until}){
-    //let start = moment().add(-weeksAgo,"weeks").startOf('isoWeek').format("YYYY-MM-DD")
-    //let end = moment().add(-weeksAgo,"weeks").endOf('isoWeek').format("YYYY-MM-DD")
+/**
+ * Retrieves the time logs from toggl, and formats them for the csv
+ *
+ * @param {object} _
+ * @param {string} _.since Inclusive from date, in format YYYY-MM-DD
+ * @param {string} _.until Inclusive from date, in format YYYY-MM-DD
+ * @returns {AsyncGenerator<(number|string)[],void,void>}
+ */
+async function* getFromToggle({since,until}){
     let start = since? since: moment().startOf("isoWeek").format("YYYY-MM-DD");
     let end = until? until: moment().format("YYYY-MM-DD");
 
     console.log(`From ${start} until ${end} (both inclusive)`);
 
-    let result = await getAllPages(start,end);
+    //Output headers
+    yield HEADERS;
 
-    let output = [HEADERS];
+    let resultGenerator = getAllPages(start,end);
 
-
-    for (let r of result){
+    for await (let r of resultGenerator){
         let start = new Date(r.start);
         let end = new Date(r.end);
         let durationMin = Math.round((end-start)/(1000*60));
@@ -149,17 +160,15 @@ async function getFromToggle({since,until}){
             description = r.project? `(Undescribed ${r.project} work)`: "(Undescribed work)";
         }
         
-        //Field order: Description, Date, Hours, Order, Opportunity, Non Chargeable
-        output.push([
+        yield [
             description,
             start.toISOString().substr(0,10),
             (durationMin/60).toFixed(2),
             order,
             opportunity, //Opportunity
             false?"Yes":"No", //non-chargeable
-        ]);
+        ];
     }
-    return output;
 }
 
 function help(){
@@ -219,7 +228,7 @@ async function run(){
         }
     }
 
-    let result = await getFromToggle(ops);
+    let resultGenerator = getFromToggle(ops);
 
     const out = ops.outfile? fs.createWriteStream(ops.outfile) : process.stdout;
     const writeOut = promisify(out.write.bind(out))
@@ -227,7 +236,7 @@ async function run(){
     let totalHours = 0;
     let isHeader = true;
 
-    for(row of result){
+    for await(let row of resultGenerator){
         await writeOut(row.map(n=>typeof(n) == "string"? `"${n.replace(/"/g,'""')}"`:n).join(",")+"\n");
         if(!isHeader){
             totalHours += (row[2])*1
