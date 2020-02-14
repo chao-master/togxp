@@ -25,10 +25,3 @@ Lookup rules then state how to log the information into CRM. At least one of ord
 
 * `Order` - The ID of the Order to log against.
 * `Opportunity` - The ID of the Opportunity to log against.
-* `Category` - The Category to use in the order, if one isn't stated in the toggl description.
-
-## Toggl Description parsing
-
-Case Ids and categories can be specified at the start of Toggl description. The case ID must start with `CAS-` (case specific). Categories must be wrapped inside square brackets (`[]`). The Case and category can be specified in either order, but they must be the first things in the description, and must only have whitespace between them.
-
-The remaining part of the description is used for the name of the time entry in CRM.
