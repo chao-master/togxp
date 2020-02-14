@@ -235,6 +235,7 @@ async function run(){
 
     let totalHours = 0;
     let isHeader = true;
+    let nRows = 0;
 
     for await(let row of resultGenerator){
         await writeOut(row.map(n=>typeof(n) == "string"? `"${n.replace(/"/g,'""')}"`:n).join(",")+"\n");
@@ -243,8 +244,9 @@ async function run(){
         } else {
             isHeader = false;
         }
+        nRows ++;
     }
-    console.log(`${result.length-1} row(s) produced`);
+    console.log(`${nRows} row(s) produced`);
     console.log(`Total hours worked: ${totalHours.toFixed(2)} apx`)
     process.exit();
 }
