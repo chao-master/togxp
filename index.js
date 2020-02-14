@@ -8,31 +8,14 @@ const path = require("path");
 const API_PASSWORD = "api_token";
 const ENDPOINT = "https://toggl.com/reports/api/v2/details";
 const USER_AGENT = "stuart.watson@felinesoft.com";
-const HEADERS = ["Name","Start Time","Hours","Time Spent","Category","Owner","Case","Order","Opportunity","Quote","Invoice"];
-const VALID_CATS = [
-    "Deployment",
-    "Infrastructure",
-    "User Support / Configuration",
-    "Development / Sprint",
-    "Information Architecture / Business Analysis",
-    "Knowledge Transfer",
-    "Project Management",
-    "Sales & Marketing",
-    "Specification / Planning / Researching",
-    "Strategic",
-    "Testing",
-    "Training",
-    "Travel",
-    "Strategy",
-    "Support"
-]
+const HEADERS = ["Description","Date","Hours","Order","Opportunity","Non Chargeable"]
 
 let API_KEY = null;
 let WORKSPACE = null;
 let USERNAME = null;
 let DEFAULT_LOC = null;
 let HALT_ON_MISSING = false;
-/** @type {({Project?:(string|RegExp),Client?:(string|RegExp),Ignore?:boolean,Order?:string,Opportunity?:string,Category?:string})[]} */
+/** @type {({Project?:(string|RegExp),Client?:(string|RegExp),Ignore?:boolean,Order?:string,Opportunity?:string})[]} */
 let PROJECT_CONFIGS = null;
 
 async function LoadConfig(){
@@ -77,66 +60,22 @@ function CheckTest(test,against){
 }
 
 /**
- * Looks up the given project & client in the config, and returns the Order and default category.
+ * Looks up the given project & client in the config
  * If multiple match the first is returned
  * @param {string} project 
+ * @param {string} client 
+ * @returns {{ignore:boolean,order:string,opportunity:string}} The details for the project and client
  */
-function getOrderAndCategoryForProject(project,client){
+function getDetailsForProject(project,client){
     for (const config of PROJECT_CONFIGS){
         if ( CheckTest(config.Project,project) && CheckTest(config.Client,client) ){
             return {
                 ignore:config.Ignore || false,
                 order:config.Order||"",
                 opportunity:config.Opportunity||"",
-                category:config.Category,
             }
         }
     }
-}
-
-/**
- * Extracts the case and category from a description. 
- * 
- * The category needs to be one of {@linkcode VALID_CATS} and surrounded by square brackets.
- * The Case number needs to start with "CAS-".
- * 
- * If present, they need to be at the start of the string, separated only by white space, in any order.
- * Any remaining description is returned as the description.
- * @param {string} description The description string to parse
- */
-function parseDescription(description){
-    let cas = "";
-    let category = "";
-    
-    while (description){
-        description = description.trim();
-
-        if (!category && description.startsWith("[")){
-            let brk = description.indexOf("]");
-            if(brk == -1){
-                throw `Missing ']' from ${description}`;
-            }
-            let enteredCat = description.substring(1,brk).toLowerCase();
-
-            description = description.substring(brk+1);
-            category = VALID_CATS.find(x=>x.toLowerCase() == enteredCat);
-
-            if(category === undefined){
-                throw `Unrecognized category ${enteredCat}`;
-            }
-        } else if (!cas && description.startsWith("CAS-")){
-            let brk = description.indexOf(" ");
-            if (brk == -1){
-                cas = description;
-                description = "";
-            }
-            cas = description.substring(0,brk);
-            description = description.substring(brk+1);
-        } else {
-            break;
-        }
-    }
-    return {cas,description,category};
 }
 
 async function getAllPages(start,end){
@@ -183,9 +122,9 @@ async function getFromToggle({since,until}){
         let start = new Date(r.start);
         let end = new Date(r.end);
         let durationMin = Math.round((end-start)/(1000*60));
-        let order, defaultCat;
+        let order;
         try {
-            let config = getOrderAndCategoryForProject(r.project,r.client);
+            let config = getDetailsForProject(r.project,r.client);
             if (config === undefined){
                 throw new Error(`Missing config for: ${r.project}, ${r.client}`);
             }
@@ -195,7 +134,6 @@ async function getFromToggle({since,until}){
             }
 
             order = config.order;
-            defaultCat = config.category;
             opportunity = config.opportunity
         } catch (e){
             console.error(`Cannot match for project:client for "${r.project}":"${r.client}", used by time slot at "${start}". Add to config to process`);
@@ -205,28 +143,21 @@ async function getFromToggle({since,until}){
             }
             continue;
         }
-        let {cas,description,category} = parseDescription(r.description);
+        let description = r.description;
 
         if(description == ""){
             description = r.project? `(Undescribed ${r.project} work)`: "(Undescribed work)";
         }
-        if(category == ""){
-            category = defaultCat;
-        }
         
+        //Field order: Description, Date, Hours, Order, Opportunity, Non Chargeable
         output.push([
             description,
-            r.start,
+            start.toISOString().substr(0,10),
             (durationMin/60).toFixed(2),
-            durationMin,
-            category,
-            USERNAME,
-            cas,
             order,
             opportunity, //Opportunity
-            "", //Quote
-            "" //Invoice
-        ])
+            false?"Yes":"No", //non-chargeable
+        ]);
     }
     return output;
 }
@@ -293,19 +224,19 @@ async function run(){
     const out = ops.outfile? fs.createWriteStream(ops.outfile) : process.stdout;
     const writeOut = promisify(out.write.bind(out))
 
-    let totalMins = 0;
+    let totalHours = 0;
     let isHeader = true;
 
     for(row of result){
         await writeOut(row.map(n=>typeof(n) == "string"? `"${n.replace(/"/g,'""')}"`:n).join(",")+"\n");
         if(!isHeader){
-            totalMins += row[3]
+            totalHours += (row[2])*1
         } else {
             isHeader = false;
         }
     }
     console.log(`${result.length-1} row(s) produced`);
-    console.log(`Total hours worked: ${(totalMins/60).toFixed(2)}`)
+    console.log(`Total hours worked: ${totalHours.toFixed(2)} apx`)
     process.exit();
 }
 
