@@ -9,6 +9,9 @@
     "Output":{
         "DefaultLocation":"./timesheet.csv"
     },
+    "Settings":{
+        "HaltOnMissing": true
+    },
     "Projects":[
         {
             "ClientRegex": "<RegExp; Optional; Do not specify with Client>",
