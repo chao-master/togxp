@@ -6,7 +6,7 @@ const {promisify} = require('util');
 const path = require("path");
 
 const API_PASSWORD = "api_token";
-const ENDPOINT = "https://toggl.com/reports/api/v2/details";
+const ENDPOINT = "https://api.track.toggl.com/reports/api/v2/details";
 const USER_AGENT = "stuart.watson@felinesoft.com";
 const HEADERS = ["Description","Date","Hours","Order","Opportunity","Non Chargeable"]
 
