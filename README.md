@@ -1,3 +1,7 @@
+**This project is no longer being maintained** as my company no longer uses CRM for our timesheets 🎉  
+We shall wait and see if the replacment is better, if not we can all expect a fork of this to deal with it.  
+If you are using this project I suggest you fork it and start maintaining it yourself. It's [MIT Licensed](LICENSE) baby!  
+
 # togxp
 
 Toggl to crm timesheet export script
